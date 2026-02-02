@@ -296,9 +296,7 @@ const App: React.FC = () => {
 
     const handleOnline = () => {
       setOnline(true);
-      SyncService.processQueue().then(() => {
-        NotificationService.sendNotification('Connection Restored', 'Offline changes have been synced to the cloud.');
-      });
+      SyncService.processQueue()
     };
     
     const handleOffline = () => {

@@ -14,14 +14,14 @@ class WebSocketClient {
   private isReconnecting = false;
 
   constructor(path: string) {
-    // Determine WS protocol based on environment or default to localhost for dev
-    const baseUrl = 'ws://localhost:5000'; 
+    const baseUrl = process.env.VITE_WS_URL || 'ws://localhost:5000'; 
     this.url = `${baseUrl}${path}`;
   }
 
   connect(token: string) {
     if (this.socket?.readyState === WebSocket.OPEN) return;
     this.token = token;
+    
     if(token === authDemoData.demoLogin.session.access_token) return;
     
     try {
@@ -77,7 +77,6 @@ class WebSocketClient {
   private scheduleReconnect() {
     if (this.isReconnecting) return;
     this.isReconnecting = true;
-    console.log(`[WS] Reconnecting in 3s...`);
     this.reconnectTimeout = setTimeout(() => {
       if (this.token) this.connect(this.token);
     }, 3000);

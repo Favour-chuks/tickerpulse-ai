@@ -99,7 +99,7 @@ export const DEMO_Data = {
         sector: 'Technology',
       },
       {
-        symbol: 'BTC/USD',
+        symbol: 'BTCUSD',
         shares: 0.5,
         avgCost: 42000,
         currentPrice: 42875,
@@ -223,7 +223,7 @@ export const DEMO_Data = {
     },
     {
       id: 10,
-      symbol: 'BTC/USD',
+      symbol: 'BTCUSD',
       companyName: 'Bitcoin',
       sector: 'Cryptocurrency',
       marketCap: '840B',
@@ -330,7 +330,7 @@ export const DEMO_Data = {
     },
     {
       id: '4',
-      symbol: 'BTC/USD',
+      symbol: 'BTCUSD',
       message: 'New 24h high reached - $43,500 resistance broken',
       priority: 'high' as const,
       alert_type: 'breakout',
@@ -777,7 +777,7 @@ export const DEMO_Data = {
     { text: 'Macro correlation break: Ticker decoupled from S&P 500 movement.', type: 'spike', priority: 'medium' },
   ],
 
-  availableTickers: ['NVDA', 'TSLA', 'AAPL', 'BTC/USD', 'MSFT', 'AMD', 'GME', 'META', 'PLTR', 'SNOW'],
+  availableTickers: ['NVDA', 'TSLA', 'AAPL', 'BTCUSD', 'MSFT', 'AMD', 'GME', 'META', 'PLTR', 'SNOW'],
 };
 
 // ==================== HELPER FUNCTIONS - SELECTORS FROM DEMO_DATA ====================

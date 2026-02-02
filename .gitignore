@@ -72,4 +72,4 @@ coverage/
 dump.rdb
 
 # example files
-./test.ts
+test.ts

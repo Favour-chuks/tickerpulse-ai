@@ -9,18 +9,10 @@ export const ConnectionBanner: React.FC = () => {
 
   const isJudge = user?.id === 'demo-user-1';
   
-  if (!isOnline) {
+  if (!isOnline || !isSocketConnected && !isJudge) {
     return (
       <div className="w-full bg-rose-600 px-4 py-2 flex items-center justify-center gap-2 text-xs font-bold text-white uppercase">
         <WifiOff size={14} /> Offline: Data will sync when restored
-      </div>
-    );
-  }
-
-  if (!isSocketConnected && !isJudge) {
-    return (
-      <div className="w-full bg-amber-500 px-4 py-2 flex items-center justify-center gap-2 text-xs font-bold text-white uppercase">
-        <WifiOff size={14} /> Live Connection Interrupted: Reconnecting...
       </div>
     );
   }
@@ -29,7 +21,7 @@ export const ConnectionBanner: React.FC = () => {
     return (
       <div className="w-full bg-indigo-600 px-4 py-1.5 flex items-center justify-center gap-2 text-xs font-bold text-white uppercase tracking-widest shadow-lg">
         <ShieldAlert size={14} className="animate-pulse text-yellow-400" />
-        <span>Judge Preview: Enjoy the evaluation!</span>
+        <span>Judge Preview: A special preview crafted for your review. I'm excited to show you what’s under the hood.</span>
       </div>
     );
   }

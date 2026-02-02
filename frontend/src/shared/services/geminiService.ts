@@ -42,15 +42,21 @@ export const analyzeFilingNarrative = async (ticker: string, filingContent: stri
   const ai = getAI();
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `Analyze this SEC filing for ${ticker}: ${filingContent}. Extract a summary, key changes, and tone analysis.`,
+    contents: `Analyze this SEC filing for ${ticker}: ${filingContent}. Provide a forensic summary and tone analysis, i want you to be data driven and provide data to support any of your point`,
     config: {
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
         properties: {
-          summary: { type: Type.STRING },
-          toneShift: { type: Type.STRING },
-          managementConfidence: { type: Type.INTEGER, description: "1-10 scale" },
+          summary: { 
+            type: Type.STRING, 
+            description: "A dense, single-paragraph executive summary highlighting material risks and performance drivers. Avoid lists."
+          },
+          toneShift: { 
+            type: Type.STRING, 
+            description: "One paragraph comparing current sentiment to historical norms, specifically identifying nuance in 'safe harbor' language." 
+          },
+          managementConfidence: { type: Type.INTEGER },
           keyChanges: { type: Type.ARRAY, items: { type: Type.STRING } }
         },
         required: ['summary', 'toneShift', 'managementConfidence', 'keyChanges']
@@ -65,10 +71,10 @@ export const generateDivergenceHypothesis = async (spike: Partial<VolumeSpike>):
   const ai = getAI();
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `A volume spike of ${spike.deviationMultiple}x moving average was detected for ${spike.tickerSymbol} at price ${spike.priceAtSpike}. No major news was found. Generate a professional market hypothesis for this divergence.`,
     config: {
-      systemInstruction: "You are a senior market analyst specializing in unusual options activity and dark pool flows."
-    }
+      systemInstruction: "You are a senior market analyst. Provide your hypothesis in exactly one professional paragraph. Focus on institutional positioning, dark pool absorption, or algorithmic execution patterns. Do not use bullet points or introductory phrases."
+    },
+    contents: `A volume spike of ${spike.deviationMultiple}x moving average was detected for ${spike.tickerSymbol} at price ${spike.priceAtSpike}. No major news correlates. Synthesize a professional market hypothesis for this price-volume divergence.`
   });
 
   return response.text || "Insufficient data for hypothesis.";
@@ -78,7 +84,7 @@ export const detectContradictions = async (ticker: string, s1: string, s2: strin
   const ai = getAI();
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `Compare these two statements from ${ticker} and identify if they contradict each other or represent a significant pivot. 
+    contents: `Compare these two statements from ${ticker}. Identify material contradictions or strategic pivots.
     Statement 1: ${s1}
     Statement 2: ${s2}`,
     config: {
@@ -88,7 +94,10 @@ export const detectContradictions = async (ticker: string, s1: string, s2: strin
         properties: {
           hasContradiction: { type: Type.BOOLEAN },
           type: { type: Type.STRING },
-          explanation: { type: Type.STRING },
+          explanation: { 
+            type: Type.STRING, 
+            description: "A single paragraph explaining the logical gap or strategy shift between these two statements and the potential impact on investor trust." 
+          },
           severity: { type: Type.STRING, enum: ['low', 'medium', 'high', 'critical'] }
         },
         required: ['hasContradiction', 'type', 'explanation', 'severity']
@@ -104,21 +113,23 @@ export const validateContradiction = async (contradiction: Contradiction): Promi
   const ai = getAI();
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `You are a forensic accountant. Validate this potential market contradiction.
-    Ticker: ${contradiction.tickerSymbol}
+    contents: `As a forensic accountant, evaluate the materiality of this contradiction for ${contradiction.tickerSymbol}.
     Statement 1: "${contradiction.quote_1}"
     Statement 2: "${contradiction.quote_2}"
-    Context: ${contradiction.explanation}
-    
-    Determine if this is a genuine contradiction reflecting a material change in strategy or guidance. Return a JSON object.`,
+    Initial Assessment: ${contradiction.explanation}
+        
+    Provide a final validation in one paragraph. Focus on whether this constitutes a breach of prior guidance or a tactical concealment of risk.`,
     config: {
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
         properties: {
           isValid: { type: Type.BOOLEAN },
-          confidence: { type: Type.NUMBER, description: "0.0 to 1.0" },
-          reasoning: { type: Type.STRING }
+          confidence: { type: Type.NUMBER },
+          reasoning: { 
+            type: Type.STRING, 
+            description: "One concise paragraph of forensic reasoning. No lists." 
+          }
         },
         required: ['isValid', 'confidence', 'reasoning']
       }

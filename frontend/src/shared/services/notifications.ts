@@ -52,7 +52,7 @@ export class NotificationService {
     const delay = Math.floor(Math.random() * (120000 - 30000 + 1) + 30000);
 
     setTimeout(async () => {
-      const demoTickers = ['NVDA', 'TSLA', 'AAPL', 'BTC/USD', 'MSFT', 'AMD', 'GME', 'META', 'PLTR', 'SNOW'];
+      const demoTickers = ['NVDA', 'TSLA', 'AAPL', 'BTCUSD', 'MSFT', 'AMD', 'GME', 'META', 'PLTR', 'SNOW'];
      
       const demoScenarios = [
         // --- STRATEGIC & NARRATIVE CONTRADICTIONS ---
