@@ -1,9 +1,7 @@
-// TODO: comeback to check this out
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import {envConfig} from '../../../config/environmentalVariables.js';
-/**
- * Represents an authenticated user
- */
+import { logger } from '../../../config/logger.js';
+
 export interface AuthUser {
   id: string
   email: string,
@@ -12,10 +10,7 @@ export interface AuthUser {
   last_name: string,
   phone_verified: boolean,
 }
-/**
- * Represents a complete authentication session with user and tokens
- */
-// TODO take a look at this null checker because these should never be null
+
 interface AuthSession {
   user: AuthUser | null;
   session: {
@@ -26,9 +21,6 @@ interface AuthSession {
   } | null;
 }
 
-/**
- * Data required for user registration
- */
 interface SignUpData {
   email: string;
   password: string;
@@ -39,17 +31,11 @@ interface SignUpData {
   };
 }
 
-/**
- * Data required for user login
- */
 interface SignInData {
   email: string;
   password: string;
 }
 
-/**
- * Custom error class for authentication-specific errors
- */
 class AuthServiceError extends Error {
   constructor(
     message: string,
@@ -57,7 +43,7 @@ class AuthServiceError extends Error {
   ) {
     super(message);
     this.name = 'AuthServiceError';
-    console.log("this log is inside the authServiceError: ",message)
+    logger.error({ message }, 'AuthServiceError');
   }
 }
 
@@ -72,12 +58,11 @@ export class SupabaseAuthService {
       throw new Error('Missing Supabase environment variables');
     }
 
-    this.supabase = createClient(supabase_url, supabase_service_role_key); //TODO check if its this that is causing the error
+    this.supabase = createClient(supabase_url, supabase_service_role_key);
   }
 
   /**
    * Maps Supabase auth data to internal AuthSession format
-   * Ensures consistent session object structure across all auth methods
    */
   private mapAuthDataToSession(authData: {
     user: any;
@@ -109,9 +94,6 @@ export class SupabaseAuthService {
     };
   }
 
-  /**
-   * Maps Supabase user data to internal AuthUser format
-   */
   private mapUserData(user: any): AuthUser {
     if (!user) {
       throw new AuthServiceError('No user data provided', 'NO_USER_DATA');
@@ -127,15 +109,11 @@ export class SupabaseAuthService {
     };
   }
 
-  /**
-   * Extracts and validates token from authorization header or raw token
-   */
   private extractToken(tokenOrHeader: string): string {
     if (!tokenOrHeader) {
       throw new AuthServiceError('Token is required', 'MISSING_TOKEN');
     }
 
-    // Remove 'Bearer ' prefix if present
     if (tokenOrHeader.startsWith('Bearer ')) {
       return tokenOrHeader.slice(7);
     }
@@ -143,17 +121,11 @@ export class SupabaseAuthService {
     return tokenOrHeader;
   }
 
-  /**
-   * Wraps Supabase errors with custom error handling
-   */
   private handleAuthError(error: any, context: string): never {
     const message = error instanceof Error ? error.message : String(error);
     throw new AuthServiceError(`${context}: ${message}`, 'AUTH_SERVICE_ERROR');
   }
 
-  /**
-   * Register a new user with email and password
-   */
   async register(data: SignUpData): Promise<AuthSession> {
   try {
     if (!data.email || !data.password) {
@@ -183,19 +155,15 @@ export class SupabaseAuthService {
   }
 }
 
-  /**
-   * Sign in with email and password
-   */
   async login(data: SignInData): Promise<AuthSession> {
     try {
-      // Validate input
       if (!data.email || !data.password) {
         throw new AuthServiceError('Email and password are required', 'INVALID_INPUT');
       }
 
       const { data: authData, error } = await this.supabase.auth.signInWithPassword({
-        email: /**"okolofavour1818@gmail.com",**/ data.email.trim(),
-        password: /**'Okolo' **/data.password.trim(),
+        email: data.email.trim(),
+        password: data.password.trim(),
       });
 
       if (error) {
@@ -211,10 +179,6 @@ export class SupabaseAuthService {
     }
   }
 
-  /**
-   * Sign in with Google OAuth
-   * Returns the OAuth URL for the client to redirect to
-   */
   async getGoogleOAuthUrl(redirectUrl: string): Promise<{ url: string }> {
     try {
       if (!redirectUrl) {
@@ -250,9 +214,6 @@ export class SupabaseAuthService {
     }
   }
 
-  /**
-   * Handle OAuth callback and exchange code for session
-   */
   async handleOAuthCallback(code: string): Promise<AuthSession> {
     try {
       if (!code) {
@@ -274,9 +235,6 @@ export class SupabaseAuthService {
     }
   }
 
-  /**
-   * Refresh access token using refresh token
-   */
   async refreshToken(refreshToken: string): Promise<AuthSession> {
     try {
       const token = this.extractToken(refreshToken);
@@ -298,9 +256,6 @@ export class SupabaseAuthService {
     }
   }
 
-  /**
-   * Get current session from access token
-   */
   async getSession(accessToken: string): Promise<AuthUser> {
     try {
       const token = this.extractToken(accessToken);
@@ -324,10 +279,6 @@ export class SupabaseAuthService {
     }
   }
 
-  /**
-   * Verify JWT token (for middleware)
-   * Accepts both raw tokens and Bearer token format
-   */
   async verifyToken(token: string): Promise<AuthUser> {
     try {
       const cleanToken = this.extractToken(token);
@@ -351,14 +302,10 @@ export class SupabaseAuthService {
     }
   }
 
-  /**
-   * Sign out user
-   */
   async logout(accessToken: string): Promise<void> {
     try {
       const token = this.extractToken(accessToken);
 
-      // Create a client with the user's access token for secure logout
       const userSupabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
         global: {
           headers: {
@@ -380,9 +327,6 @@ export class SupabaseAuthService {
     }
   }
 
-  /**
-   * Update user metadata
-   */
   async updateUserMetadata(
     accessToken: string,
     metadata: Record<string, any>
@@ -415,9 +359,6 @@ export class SupabaseAuthService {
     }
   }
 
-  /**
-   * Get authenticated Supabase client for database operations
-   */
   getClient(): SupabaseClient {
     return this.supabase;
   }

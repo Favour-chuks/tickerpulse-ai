@@ -637,7 +637,7 @@ export const api = {
 
     getSpikes: async (): Promise<VolumeSpike[]> => {
       try {
-        const res = await fetchWithAuth('/volume-spikes');
+        const res = await fetchWithAuth(`/market/volume-spikes`);
         return res.spikes || [];
       } catch (e) {
         if(isDemoUser()){

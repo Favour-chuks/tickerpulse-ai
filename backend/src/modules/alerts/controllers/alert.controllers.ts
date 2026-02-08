@@ -206,7 +206,9 @@ export class AlertController {
       ).data?.id || '');
 
     const watchedTickers = new Set(
-      watchlistData?.map(item => item.tickers.symbol) || []
+      watchlistData?.flatMap(item => 
+        item.tickers.map(t => t.symbol)
+      ) || []
     );
 
     connection.socket.send(JSON.stringify({

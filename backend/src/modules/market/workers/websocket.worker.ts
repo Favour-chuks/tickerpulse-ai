@@ -1,5 +1,6 @@
 import type { Job } from 'bull';
-import { redis } from '../../../config/redis.js';
+import redisService from '../../../config/redis.js';
+import { logger } from '../../../config/logger.js';
 import type { WebSocketQueueJob } from '../../../shared/infra/services/queue.service.js';
 
 /**
@@ -16,20 +17,18 @@ import type { WebSocketQueueJob } from '../../../shared/infra/services/queue.ser
 export async function processBroadcastJob(
   job: Job<WebSocketQueueJob>
 ): Promise<void> {
-  console.log(`📡 Processing broadcast job ${job.id}:`, job.data);
+  logger.info({ jobId: job.id, data: job.data }, '📚 Processing broadcast job');
 
   try {
     const { ticker_id, connection_ids, event_type, data } = job.data;
 
     // Get all subscriptions for this ticker
-    const subscriptions = await redis.smembers(`ticker:${ticker_id}:subscribers`);
+    const subscriptions = await redisService.client.smembers(`ticker:${ticker_id}:subscribers`);
 
-    console.log(
-      `📡 Broadcasting to ${subscriptions.length} subscriptions for ticker ${ticker_id}`
-    );
+    logger.info({ tickerId: ticker_id, count: subscriptions.length }, '📚 Broadcasting to subscriptions');
 
     if (subscriptions.length === 0) {
-      console.log(`⚠️  No active subscriptions for ticker ${ticker_id}`);
+      logger.warn({ tickerId: ticker_id }, '⚠️  No active subscriptions for ticker');
       return;
     }
 
@@ -43,18 +42,16 @@ export async function processBroadcastJob(
     // Broadcast to all subscribed users
     const results = await Promise.allSettled(
       subscriptions.map((subscription: string) =>
-        redis.publish(`ticker:${ticker_id}:updates`, JSON.stringify(broadcastData))
+        redisService.client.publish(`ticker:${ticker_id}:updates`, JSON.stringify(broadcastData))
       )
     );
 
     // Count successful broadcasts
     const successful = results.filter((r: any) => r.status === 'fulfilled').length;
 
-    console.log(
-      `✅ Broadcast sent to ${successful}/${subscriptions.length} subscriptions`
-    );
+    logger.info({ successful, total: subscriptions.length }, '✅ Broadcast sent to subscriptions');
   } catch (error) {
-    console.error(`❌ Error processing broadcast job ${job.id}:`, error);
+    logger.error({ jobId: job.id, error }, '❌ Error processing broadcast job');
     throw error;
   }
 }
@@ -67,7 +64,7 @@ export async function broadcastMarketData(
   marketData: any
 ): Promise<void> {
   try {
-    await redis.publish(
+    await redisService.client.publish(
       `ticker:${ticker_id}:market_data`,
       JSON.stringify({
         event: 'market_data',
@@ -77,7 +74,7 @@ export async function broadcastMarketData(
       })
     );
   } catch (error) {
-    console.error(`Error broadcasting market data for ticker ${ticker_id}:`, error);
+    logger.error({ tickerId: ticker_id, error }, 'Error broadcasting market data');
   }
 }
 
@@ -92,10 +89,10 @@ export async function subscribeToTicker(
 ): Promise<void> {
   try {
     // Add to ticker subscribers
-    await redis.sadd(`ticker:${ticker_id}:subscribers`, connection_id);
+    await redisService.client.sadd(`ticker:${ticker_id}:subscribers`, connection_id);
 
     // Store subscription metadata
-    await redis.hset(
+    await redisService.client.hset(
       `ws:subscription:${connection_id}`,
       'ticker_id',
       ticker_id,
@@ -108,16 +105,11 @@ export async function subscribeToTicker(
     );
 
     // Add ticker to user's active tickers
-    await redis.sadd(`user:${user_id}:active_tickers`, ticker_id);
+    await redisService.client.sadd(`user:${user_id}:active_tickers`, ticker_id);
 
-    console.log(
-      `✅ Connection ${connection_id} subscribed to ticker ${ticker_id} (${subscription_type})`
-    );
+    logger.info({ connectionId: connection_id, tickerId: ticker_id, type: subscription_type }, '✅ Connection subscribed to ticker');
   } catch (error) {
-    console.error(
-      `Error subscribing connection ${connection_id} to ticker ${ticker_id}:`,
-      error
-    );
+    logger.error({ connectionId: connection_id, tickerId: ticker_id, error }, 'Error subscribing connection to ticker');
   }
 }
 
@@ -130,27 +122,24 @@ export async function unsubscribeFromTicker(
 ): Promise<void> {
   try {
     // Remove from ticker subscribers
-    await redis.srem(`ticker:${ticker_id}:subscribers`, connection_id);
+    await redisService.client.srem(`ticker:${ticker_id}:subscribers`, connection_id);
 
     // Remove subscription metadata
-    await redis.del(`ws:subscription:${connection_id}`);
+    await redisService.client.del(`ws:subscription:${connection_id}`);
 
     // Remove ticker from user's active tickers if no more subscriptions
-    const activeSubscriptions = await redis.keys(`ticker:*:subscribers`);
+    const activeSubscriptions = await redisService.client.keys(`ticker:*:subscribers`);
     const stillSubscribed = activeSubscriptions.some(
       (key: string) =>
-        redis
+        redisService.client
           .sismember(key, connection_id)
           .then((result: any) => result === 1)
           .catch(() => false)
     );
 
-    console.log(`✅ Connection ${connection_id} unsubscribed from ticker ${ticker_id}`);
+    logger.info({ connectionId: connection_id, tickerId: ticker_id }, '✅ Connection unsubscribed from ticker');
   } catch (error) {
-    console.error(
-      `Error unsubscribing connection ${connection_id} from ticker ${ticker_id}:`,
-      error
-    );
+    logger.error({ connectionId: connection_id, tickerId: ticker_id, error }, 'Error unsubscribing connection from ticker');
   }
 }
 
@@ -161,21 +150,21 @@ export async function cleanupInactiveSubscriptions(
   timeoutMinutes: number = 30
 ): Promise<number> {
   try {
-    console.log(`🧹 Cleaning up inactive WebSocket subscriptions (timeout: ${timeoutMinutes}m)`);
+    logger.info({ timeoutMinutes }, '🧹 Cleaning up inactive WebSocket subscriptions');
 
-    const subscriptionKeys = await redis.keys('ws:subscription:*');
+    const subscriptionKeys = await redisService.client.keys('ws:subscription:*');
     let cleanedCount = 0;
 
     for (const key of subscriptionKeys) {
-      const subscription = await redis.hgetall(key);
+      const subscription = await redisService.client.hgetall(key);
 
       if (!subscription || Object.keys(subscription).length === 0) {
-        await redis.del(key);
+        await redisService.client.del(key);
         cleanedCount++;
         continue;
       }
 
-      const subscribedAt = new Date(subscription.subscribed_at);
+      const subscribedAt = new Date(subscription.subscribed_at || Date.now());
       const now = new Date();
       const diffMinutes = (now.getTime() - subscribedAt.getTime()) / (1000 * 60);
 
@@ -190,10 +179,10 @@ export async function cleanupInactiveSubscriptions(
       }
     }
 
-    console.log(`✅ Cleaned up ${cleanedCount} inactive subscriptions`);
+    logger.info({ cleanedCount }, '✅ Cleaned up inactive subscriptions');
     return cleanedCount;
   } catch (error) {
-    console.error('Error cleaning up inactive subscriptions:', error);
+    logger.error({ error }, 'Error cleaning up inactive subscriptions');
     return 0;
   }
 }
@@ -203,8 +192,8 @@ export async function cleanupInactiveSubscriptions(
  */
 export async function getSubscriptionStats(): Promise<Record<string, any>> {
   try {
-    const subscriptionKeys = await redis.keys('ws:subscription:*');
-    const tickerKeys = await redis.keys('ticker:*:subscribers');
+    const subscriptionKeys = await redisService.client.keys('ws:subscription:*');
+    const tickerKeys = await redisService.client.keys('ticker:*:subscribers');
 
     const stats: Record<string, any> = {
       active_connections: subscriptionKeys.length,
@@ -216,14 +205,14 @@ export async function getSubscriptionStats(): Promise<Record<string, any>> {
     for (const key of tickerKeys) {
       const ticker_id = key.match(/ticker:(\d+):subscribers/)?.[1];
       if (ticker_id) {
-        const count = await redis.scard(key);
+        const count = await redisService.client.scard(key);
         stats.tickers[ticker_id] = count;
       }
     }
 
     return stats;
   } catch (error) {
-    console.error('Error getting subscription stats:', error);
+    logger.error({ error }, 'Error getting subscription stats');
     return {};
   }
 }
@@ -236,15 +225,15 @@ export async function handleConnectionDisconnect(connection_id: string): Promise
     console.log(`🔌 Handling disconnect for connection ${connection_id}`);
 
     // Get all subscriptions for this connection
-    const subscription = await redis.hgetall(`ws:subscription:${connection_id}`);
+    const subscription = await redisService.client.hgetall(`ws:subscription:${connection_id}`);
 
     if (subscription && subscription.ticker_id) {
       await unsubscribeFromTicker(parseInt(subscription.ticker_id), connection_id);
     }
 
     // Clean up connection data
-    await redis.del(`ws:subscription:${connection_id}`);
-    await redis.del(`ws:messages:${connection_id}`);
+    await redisService.client.del(`ws:subscription:${connection_id}`);
+    await redisService.client.del(`ws:messages:${connection_id}`);
 
     console.log(`✅ Cleaned up connection ${connection_id}`);
   } catch (error) {

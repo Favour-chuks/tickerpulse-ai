@@ -41,8 +41,6 @@ export class AuthController {
         },
       });
       
-      console.log('this is the auth data from the auth controller', authData)
-      
       return reply.code(201).send({
         message: 'User created successfully in the signup',
         ...authData
@@ -56,8 +54,6 @@ export class AuthController {
     try {
       const { email, password } = request.body;
 
-      console.log(`this is the email: ${email}, while this is the password: ${password}`);
-
       if (!email || !password) {
         return reply.code(400).send({
           error: 'Email and password are required',
@@ -66,8 +62,6 @@ export class AuthController {
       }
 
       const authData = await supabaseAuthService.login({ email, password });
-
-      console.log("this is the auth data from the login session: ",authData)
 
       return reply.send({
         message: 'Login successful',

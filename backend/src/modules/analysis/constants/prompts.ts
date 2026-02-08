@@ -1,4 +1,3 @@
-// TODO: Edit this prompt to have more context
 
 export const SYSTEM_PROMPT = `You are a financial analysis AI assistant with access to a comprehensive market database.
 

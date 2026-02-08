@@ -52,7 +52,7 @@ lerna-debug.log*
 
 # Temporary files
 /backend/frontend_ints
-/backend/src/database
+/backend/database
 pitch.md
 *.tmp
 .cache/

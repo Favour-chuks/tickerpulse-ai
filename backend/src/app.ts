@@ -1,4 +1,4 @@
-import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
+import Fastify from "fastify";
 import fastifyWebsocket from '@fastify/websocket';
 import fastifyCors from "@fastify/cors";
 
@@ -6,17 +6,20 @@ import { envConfig } from "./config/environmentalVariables.js";
 import { getLoggerConfig } from './config/logger.js';
 
 import { verifyJWT } from "./shared/middlewares/auth.middleware.js";
-// import { initializeQueues, getQueueStats } from "./services/queue.service.js";
-// import redisService from "./config/redis.js";
+import { initializeQueues, getQueueStats, wsQueue } from "./shared/infra/services/queue.service.js";
+import { initializeDataIngestionWorkers } from './shared/infra/workers/data-ingestion.worker.js';
+import { processBroadcastJob } from './modules/market/workers/websocket.worker.js';
+import redisService from "./config/redis.js";
 
 import alertRoutes from "./modules/alerts/routes/alert.routes.js";
-// import analysisRoutes from './modules/analysis/routes/analysis.routes.js';
+import analysisRoutes from './modules/analysis/routes/analysis.routes.js';
 import authRoutes from './modules/auth/routes/auth.routes.js';
-import narrativeRoutes from "./modules/analysis/routes/narrative.routes.js";
 import marketRoutes from './modules/market/routes/market.routes.js';
-import pushRoutes from './modules/notifications/routes/push.routes.js';
+import narrativeRoutes from "./modules/analysis/routes/narrative.routes.js";
 import userRoutes from './modules/users/routes/user.routes.js';
 import watchlistRoutes from './modules/watchlists/routes/watchlist.routes.js';
+import wsRoutes from './modules/market/routes/ws.routes.js';
+// import pushRoutes from './modules/notifications/routes/push.routes.js';
 
 import { AppError } from "./shared/utils/errors.js";
 
@@ -87,21 +90,21 @@ fastify.register(async (publicInstance) => {
   });
 
 
-  // publicInstance.get('/api/v1/queue-stats', async (request, reply) => {
-  //   try {
-  //     const stats = await getQueueStats();
-  //     return reply.code(200).send({
-  //       status: 'ok',
-  //       timestamp: new Date().toISOString(),
-  //       queues: stats,
-  //     });
-  //   } catch (error) {
-  //     return reply.code(500).send({
-  //       status: 'error',
-  //       error: error instanceof Error ? error.message : 'Unknown error',
-  //     });
-  //   }
-  // });
+  publicInstance.get('/api/v1/queue-stats', async (request, reply) => {
+    try {
+      const stats = await getQueueStats();
+      return reply.code(200).send({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        queues: stats,
+      });
+    } catch (error) {
+      return reply.code(500).send({
+        status: 'error',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
 
   publicInstance.register(authRoutes, { prefix: '/api/v1/auth' });
 })
@@ -113,20 +116,25 @@ fastify.register(async (protectedInstance) => {
 
   protectedInstance.register(watchlistRoutes, { prefix: '/api/v1/watchlist' });
 
-  // protectedInstance.register(alertRoutes, { prefix: '/api/v1/alerts' });
+  protectedInstance.register(alertRoutes, { prefix: '/api/v1/alerts' });
 
   // protectedInstance.register(pushRoutes, {prefix: '/api/v1/push'})
 
-  // protectedInstance.register(narrativeRoutes, { prefix: '/api/v1/narratives' });
+  protectedInstance.register(narrativeRoutes, { prefix: '/api/v1/narratives' });
 
   protectedInstance.register(marketRoutes, { prefix: '/api/v1/market' });
 
-  // protectedInstance.register(analysisRoutes, { prefix: '/api/v1/analyse' });
+  protectedInstance.register(analysisRoutes, { prefix: '/api/v1/analyse' });
 });
 
 /**
+  * WebSocket routes are registered separately to avoid authentication middleware
+  */
+fastify.register(wsRoutes, { prefix: '/ws' });
+
+
+/**
  * Global error handler
- * Catches all unhandled errors in route handlers
  */
 fastify.setErrorHandler(async (error: any, request, reply) => {
   fastify.log.error({
@@ -135,7 +143,6 @@ fastify.setErrorHandler(async (error: any, request, reply) => {
     method: request.method,
   }, 'Unhandled error');
 
-  // Map error to appropriate HTTP status code
   const statusCode = error?.statusCode || 500;
   const message = error?.message || 'Internal Server Error';
 
@@ -149,9 +156,6 @@ fastify.setErrorHandler(async (error: any, request, reply) => {
   });
 });
 
-/**
- * 404 Not Found handler
- */
 fastify.setNotFoundHandler(async (request, reply) => {
   return reply.code(404).send({
     error: {
@@ -162,24 +166,30 @@ fastify.setNotFoundHandler(async (request, reply) => {
   });
 });
 
-/**
- * Start the Fastify server
- * Listens on the configured port and logs the startup message
- */
 export const start = async () => {
   try {
-    // Test Redis connection
-    // fastify.log.info('🔌 Testing Redis connection...');
-    // const redisConnected = await redisService.testConnection();
-    // if (!redisConnected) {
-    //   throw new Error('Failed to connect to Redis');
-    // }
-    // fastify.log.info('✅ Redis connection successful');
+    fastify.log.info('🔌 Testing Redis connection...');
+    const redisConnected = await redisService.testConnection();
+    if (!redisConnected) {
+      throw new Error('Failed to connect to Redis');
+    }
+    fastify.log.info('✅ Redis connection successful');
 
-    // Initialize message queues
-    // fastify.log.info('📬 Initializing message queues...');
-    // await initializeQueues();
-    // fastify.log.info('✅ Message queues initialized');
+    fastify.log.info('📬 Initializing message queues...');
+    await initializeQueues();
+    fastify.log.info('✅ Message queues initialized');
+
+    // Initialize workers within the same process so `pnpm run dev` starts both API and workers
+    try {
+      fastify.log.info('🛠️  Initializing background workers...');
+      // Register WebSocket broadcast worker processor
+      wsQueue.process(3, processBroadcastJob);
+      await initializeDataIngestionWorkers();
+      fastify.log.info('✅ Background workers initialized');
+    } catch (workerErr) {
+      fastify.log.error(workerErr, 'Failed to initialize background workers');
+      // Do not throw — allow server to start but warn
+    }
 
     await fastify.ready();
 
@@ -199,5 +209,3 @@ export const start = async () => {
     throw error;
   }
 };
-
-export default fastify;

@@ -1,5 +1,3 @@
-// TODO: might need to change these to db types 
-
 export interface Message {
   role: 'user' | 'model';
   parts: Array<{ text?: string; functionCall?: any; functionResponse?: any }>;

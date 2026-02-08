@@ -12,7 +12,16 @@ declare global {
 
 export const verifyJWT = async (request: FastifyRequest, reply: FastifyReply) => {
   try {
-    const authHeader = request.headers.authorization;
+    // Accept token from Authorization header OR query param `token`
+    let authHeader = request.headers.authorization as string | undefined;
+
+    if (!authHeader) {
+      // fall back to ?token=<jwt> for websocket or other clients
+      const maybeToken = (request as any).query?.token || (request as any).query?.access_token;
+      if (maybeToken) {
+        authHeader = `Bearer ${maybeToken}`;
+      }
+    }
 
     if (!authHeader) {
       return reply.code(401).send({
@@ -29,13 +38,34 @@ export const verifyJWT = async (request: FastifyRequest, reply: FastifyReply) =>
     }
 
     try {
+      // Try to verify the provided access token
       const user = await supabaseAuthService.verifyToken(authHeader);
-      
-      if(!user) throw new Error('Unauthorized')
-
+      if (!user) throw new Error('Unauthorized');
       request.user = user;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Token verification failed';
+      return;
+    } catch (error: any) {
+      // If token is expired and client provided a refresh token, attempt refresh
+      const message = error instanceof Error ? error.message : String(error);
+      const isExpired = /expired/i.test(message);
+
+      if (isExpired) {
+        const refreshToken = (request.headers['x-refresh-token'] as string) || (request as any).query?.refresh_token;
+        if (refreshToken) {
+          try {
+            const session = await supabaseAuthService.refreshToken(refreshToken);
+            if (session?.session && session?.user) {
+              // Set new tokens on response for client to pick up
+              reply.header('X-Access-Token', session.session.access_token);
+              reply.header('X-Refresh-Token', session.session.refresh_token);
+              request.user = session.user as any;
+              return;
+            }
+          } catch (refreshErr) {
+            // fallthrough to return original token error below
+          }
+        }
+      }
+
       return reply.code(401).send({
         error: `Unauthorized: ${message}`,
         code: 'TOKEN_VERIFICATION_FAILED',

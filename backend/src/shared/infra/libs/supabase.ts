@@ -8,7 +8,10 @@ const { supabase_url, supabase_service_role_key } = envConfig;
 if (!supabase_url) throw new Error('Supabase URL missing');
 if (!supabase_service_role_key) throw new Error('Supabase service role key missing');
 
-export const supabase = createClient<Database>(
+// Use a loosely-typed client in application code to avoid strict table-name
+// overloads in many dynamic places. For stricter typing, replace `any` with
+// `Database` and update queries to use typed tables.
+export const supabase = createClient<any>(
   supabase_url,
   supabase_service_role_key,
   {

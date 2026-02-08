@@ -1,5 +1,5 @@
-import axios from 'axios';
-import geminiService  from '../../analysis/services/gemini.service.js';
+import { finnhubClient } from '../../../shared/infra/services/finnhub.service.js';
+import geminiService from '../../analysis/services/gemini.service.js';
 import { supabaseAuthService } from '../../auth/services/supabaseAuth.service.js';
 
 interface FinnhubNewsArticle {
@@ -42,15 +42,8 @@ interface AnalyzedArticle {
 }
 
 export class NewsInjectionService {
-  private finnhubApiKey: string;
-  private finnhubBaseUrl = 'https://finnhub.io/api/v1';
-
   constructor() {
-    const apiKey = process.env.FINNHUB_API_KEY;
-    if (!apiKey) {
-      throw new Error('FINNHUB_API_KEY environment variable is required');
-    }
-    this.finnhubApiKey = apiKey;
+    // Finnhub client is initialized in finnhub.service.ts
   }
 
   /**
@@ -58,19 +51,13 @@ export class NewsInjectionService {
    */
   async fetchNewsForTicker(ticker: string, limit: number = 10): Promise<FinnhubNewsArticle[]> {
     try {
-      const response = await axios.get(`${this.finnhubBaseUrl}/news`, {
-        params: {
-          symbol: ticker,
-          token: this.finnhubApiKey,
-          limit: limit,
-        },
-      });
+      const response = await finnhubClient.getLatestNews(ticker, limit);
 
-      if (!response.data || !Array.isArray(response.data)) {
+      if (!response || !Array.isArray(response)) {
         throw new Error('Invalid response from Finnhub API');
       }
 
-      return response.data;
+      return response;
     } catch (error) {
       throw new Error(
         `Failed to fetch news for ${ticker}: ${error instanceof Error ? error.message : String(error)}`

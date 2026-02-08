@@ -1,8 +1,6 @@
 import Bull from 'bull';
 import type { Queue, Job, QueueOptions } from 'bull';
-// TODO: comeback for this 
-import redisService from '../config/redis.js';
-
+import redisService from '../../../config/redis.js';
 /**
  * Interface for Alert Queue jobs
  */
@@ -132,11 +130,53 @@ export const workerQueue: Queue = new Bull('worker-jobs', {
 } as any);
 
 /**
+ * Market Data Ingestion Queue
+ * Handles fetching and storing market data from Finnhub (5-minute interval)
+ */
+export const marketDataQueue: Queue = new Bull('market-data-ingestion', {
+  redis: redisService,
+  ...queueConfig,
+  defaultJobOptions: {
+    ...queueConfig.defaultJobOptions,
+    attempts: 2,
+    removeOnComplete: true,
+  },
+} as any);
+
+/**
+ * News Polling Queue
+ * Handles fetching and storing news from Finnhub (5-minute interval)
+ */
+export const newsPollingQueue: Queue = new Bull('news-polling', {
+  redis: redisService,
+  ...queueConfig,
+  defaultJobOptions: {
+    ...queueConfig.defaultJobOptions,
+    attempts: 2,
+    removeOnComplete: true,
+  },
+} as any);
+
+/**
+ * SEC Filing Queue
+ * Handles fetching and storing SEC filings from EDGAR (daily interval)
+ */
+export const secFilingQueue: Queue = new Bull('sec-filing-ingestion', {
+  redis: redisService,
+  ...queueConfig,
+  defaultJobOptions: {
+    ...queueConfig.defaultJobOptions,
+    attempts: 2,
+    removeOnComplete: true,
+  },
+} as any);
+
+/**
  * Initialize all queues with event handlers
  */
 export const initializeQueues = async (): Promise<void> => {
   // Global error handler
-  [alertQueue, notificationQueue, wsQueue, workerQueue].forEach((queue) => {
+  [alertQueue, notificationQueue, wsQueue, workerQueue, marketDataQueue, newsPollingQueue, secFilingQueue].forEach((queue) => {
     queue.on('error', (error) => {
       console.error(`❌ Queue error (${queue.name}):`, error);
     });
@@ -167,6 +207,9 @@ export const closeQueues = async (): Promise<void> => {
       notificationQueue.close(),
       wsQueue.close(),
       workerQueue.close(),
+      marketDataQueue.close(),
+      newsPollingQueue.close(),
+      secFilingQueue.close(),
     ]);
     console.log('✅ All queues closed');
   } catch (error) {
@@ -220,7 +263,44 @@ export const getQueueStats = async (): Promise<Record<string, any>> => {
     notifications: await notificationQueue.getJobCounts(),
     websocket: await wsQueue.getJobCounts(),
     workers: await workerQueue.getJobCounts(),
+    marketData: await marketDataQueue.getJobCounts(),
+    newsPolling: await newsPollingQueue.getJobCounts(),
+    secFiling: await secFilingQueue.getJobCounts(),
   };
+};
+
+/**
+ * Cleanup expired notifications in the notification queue
+ * Scans jobs in the notification queue and removes jobs whose
+ * `expires_at` timestamp is in the past. Returns number of removed jobs.
+ */
+export const cleanupExpiredNotifications = async (): Promise<number> => {
+  try {
+    const jobs = await notificationQueue.getJobs(['waiting', 'delayed', 'active', 'completed']);
+    const now = Date.now();
+    let removed = 0;
+
+    await Promise.all(
+      jobs.map(async (job) => {
+        try {
+          const data: any = job.data as any;
+          const expiresAt = data?.expires_at ? Date.parse(data.expires_at) : null;
+          if (expiresAt && !isNaN(expiresAt) && expiresAt < now) {
+            await job.remove();
+            removed++;
+          }
+        } catch (err) {
+          // ignore per-job errors
+        }
+      })
+    );
+
+    console.log(`🧹 Cleaned up ${removed} expired notifications`);
+    return removed;
+  } catch (error) {
+    console.error('Error during cleanupExpiredNotifications:', error);
+    return 0;
+  }
 };
 
 export default {
@@ -228,10 +308,14 @@ export default {
   notificationQueue,
   wsQueue,
   workerQueue,
+  marketDataQueue,
+  newsPollingQueue,
+  secFilingQueue,
   initializeQueues,
   closeQueues,
   queueAlert,
   queueNotification,
   queueWebSocketBroadcast,
   getQueueStats,
+  cleanupExpiredNotifications,
 };

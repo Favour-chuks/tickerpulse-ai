@@ -20,15 +20,25 @@ export class RedisService {
       enableReadyCheck: false,
       enableOfflineQueue: true,
       password: redis_password,
+      family: 0,
+      // Do not attempt to connect immediately during construction. This
+      // avoids throwing DNS errors synchronously at app startup when the
+      // Redis hostname is not resolvable in the current environment.
+      lazyConnect: true,
+      // Gentle retry strategy to avoid tight reconnect loops and noisy logs
+      // when a hostname can't be resolved.
+      retryStrategy: (times: number) => Math.min(times * 50, 2000),
     };
 
     this.client = redis_service_uri 
       ? new Redis(redis_service_uri, commonOptions)
       : new Redis({ host: redis_host, port: Number(redis_port), ...commonOptions });
 
-    this.queueClient = redis_service_uri
-      ? new Redis(redis_service_uri, commonOptions)
-      : new Redis({ host: redis_host, port: Number(redis_port), ...commonOptions });
+    // Use duplicate() for the queue client so both clients share the
+    // same options but avoid creating a third distinct config path.
+    // With `lazyConnect: true` neither will immediately attempt DNS
+    // resolution until `.connect()`/`.ping()` is invoked.
+    this.queueClient = this.client.duplicate();
 
     this.initializeEventHandlers();
   }

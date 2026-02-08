@@ -2,8 +2,6 @@ import { supabase } from '../../../shared/infra/libs/supabase.js';
 import { logger } from '../../../config/logger.js';
 import type { ToolExecutionResult } from '../types/analysis.type.js';
 
-
-// TODO: Look into this 
 export class ToolExecutionService {
   async searchTickers(searchTerm: string, limit: number = 10, userId?: string): Promise<ToolExecutionResult> {
     try {
@@ -462,7 +460,6 @@ export class ToolExecutionService {
     }
   }
 
-  // TODO: check this for proper review
   async executeCustomQuery(query: string, explanation: string, userId?: string): Promise<ToolExecutionResult> {
     try {
       const upperQuery = query.trim().toUpperCase();

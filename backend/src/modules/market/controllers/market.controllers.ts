@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { supabase } from '../libs/supabase.js';
+import { supabase } from '../../../shared/infra/libs/supabase.js';
 
 interface SearchQuery {
   search_term: string;
@@ -212,6 +212,89 @@ export class MarketDataController {
           query = query.eq('ticker_id', ticker.id);
         }
       }
+
+      if (movement_type) {
+        query = query.eq('movement_type', movement_type);
+      }
+
+      if (min_deviation) {
+        query = query.gte('deviation_multiple', min_deviation);
+      }
+
+      const { data, error } = await query.limit(50);
+
+      if (error) throw error;
+
+      return reply.send({
+        success: true,
+        spikes: data,
+        count: data?.length || 0,
+      });
+    } catch (error: any) {
+      request.log.error(error);
+      return reply.code(500).send({ success: false, error: error.message });
+    }
+  };
+
+  /**
+   * Get volume spikes for user's watchlist tickers
+   * GET /api/volume-spikes?days=7&movement_type=SPIKE&min_deviation=3
+   */
+  public getUserVolumeSpikes = async (
+    request: FastifyRequest<{ Querystring: VolumeSpikeQuery }>,
+    reply: FastifyReply
+  ) => {
+    try {
+      const userId = (request as any).user?.id;
+      if (!userId) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
+
+      const { days = 7, movement_type, min_deviation } = request.query;
+
+      // Get user's default watchlist
+      const { data: watchlist } = await supabase
+        .from('watchlists')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('is_default', true)
+        .single();
+
+      if (!watchlist) {
+        return reply.send({
+          success: true,
+          spikes: [],
+          count: 0,
+          message: 'No default watchlist found',
+        });
+      }
+
+      // Get tickers in watchlist
+      const { data: watchlistItems } = await supabase
+        .from('watchlist_items')
+        .select('ticker_id')
+        .eq('watchlist_id', watchlist.id);
+
+      if (!watchlistItems || watchlistItems.length === 0) {
+        return reply.send({
+          success: true,
+          spikes: [],
+          count: 0,
+          message: 'No tickers in watchlist',
+        });
+      }
+
+      const tickerIds = watchlistItems.map(item => item.ticker_id);
+
+      let query = supabase
+        .from('volume_spikes')
+        .select(`
+          *,
+          tickers (symbol, company_name)
+        `)
+        .in('ticker_id', tickerIds)
+        .gte('detected_at', new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString())
+        .order('detected_at', { ascending: false });
 
       if (movement_type) {
         query = query.eq('movement_type', movement_type);
@@ -511,50 +594,6 @@ export class MarketDataController {
     success: false,
     error: 'Custom SQL queries are disabled for security reasons'
   });
-  // TODO: check if this code is needed for the function calling and uncommment if true and run the function in supabase
-    // try {
-    //   const { query, explanation } = request.body;
-
-    //   // Security: Only allow SELECT queries
-    //   const upperQuery = query.trim().toUpperCase();
-    //   if (!upperQuery.startsWith('SELECT')) {
-    //     return reply.code(400).send({ 
-    //       success: false, 
-    //       error: 'Only SELECT queries are allowed' 
-    //     });
-    //   }
-
-    //   // Check for dangerous keywords
-    //   const dangerous = ['DROP', 'DELETE', 'INSERT', 'UPDATE', 'ALTER', 'CREATE', 'TRUNCATE'];
-    //   if (dangerous.some((keyword) => upperQuery.includes(keyword))) {
-    //     return reply.code(400).send({ 
-    //       success: false, 
-    //       error: 'Query contains forbidden keywords' 
-    //     });
-    //   }
-
-    //   // Add LIMIT if not present
-    //   let finalQuery = query.trim();
-    //   if (!upperQuery.includes('LIMIT')) {
-    //     finalQuery += ' LIMIT 100';
-    //   }
-
-    //   const { data, error } = await supabase.rpc('execute_sql', {
-    //     sql_query: finalQuery,
-    //   });
-
-    //   if (error) throw error;
-
-    //   return reply.send({
-    //     success: true,
-    //     explanation,
-    //     row_count: Array.isArray(data) ? data.length : 0,
-    //     results: data,
-    //   });
-    // } catch (error: any) {
-    //   request.log.error(error);
-    //   return reply.code(500).send({ success: false, error: error.message });
-    // }
   };
 
   // ==================== HELPER METHODS ====================
